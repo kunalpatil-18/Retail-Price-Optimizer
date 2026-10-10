@@ -1,0 +1,56 @@
+{
+  "category": "Electronics",
+  "rows": 660,
+  "products": [
+    "4K Smart Monitor",
+    "Gaming Laptop",
+    "Laser Printer",
+    "Mechanical Keyboard",
+    "Smartphone",
+    "Tablet",
+    "Wireless Earbuds"
+  ],
+  "selected_model": "RandomForest",
+  "holdout": {
+    "name": "RandomForest",
+    "mae": 1.7164184518797254,
+    "rmse": 2.2244120484877863,
+    "r2": 0.7212245096538908
+  },
+  "all_model_scores": [
+    {
+      "name": "RandomForest",
+      "mae": 1.7164184518797254,
+      "rmse": 2.2244120484877863,
+      "r2": 0.7212245096538908
+    },
+    {
+      "name": "ExtraTrees",
+      "mae": 1.78190325825269,
+      "rmse": 2.336694967738188,
+      "r2": 0.6923703740602221
+    },
+    {
+      "name": "GradientBoosting",
+      "mae": 1.7448692247154125,
+      "rmse": 2.2170904617206104,
+      "r2": 0.7230566520997074
+    }
+  ],
+  "features": [
+    "Product",
+    "UnitPrice_INR",
+    "BaseUnitPrice_INR",
+    "UnitCost_INR",
+    "Discount",
+    "Region",
+    "CustomerType",
+    "Promotion",
+    "Month",
+    "DayOfWeek",
+    "Year"
+  ],
+  "target": "Quantity",
+  "validation_method": "chronological 80/20 split; selected by holdout MAE",
+  "limitation": "Historical observational data cannot establish causal price elasticity. Competitor prices are not in training data."
+}

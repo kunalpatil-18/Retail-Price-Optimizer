@@ -1,0 +1,20 @@
+ProductName,Category,BaseUnitPrice_INR,UnitCost_INR,ProductID,Supplier,SupplierContact
+Spiral Notebook,Office Supplies,150.0,60.0,P10001,OfficePro Distro,orders@officepro.com
+Sticky Notes Bundle,Office Supplies,200.0,80.0,P10002,OfficePro Distro,orders@officepro.com
+Ballpoint Pen Pack,Office Supplies,250.0,100.0,P10003,OfficePro Distro,orders@officepro.com
+A4 Printer Paper (500 Sheets),Office Supplies,450.0,220.0,P10004,OfficePro Distro,orders@officepro.com
+HDMI Cable,Accessories,600.0,250.0,P10005,Global Tech Supplies,contact@globaltech.com
+USB Flash Drive 64GB,Accessories,800.0,350.0,P10006,Global Tech Supplies,contact@globaltech.com
+Wireless Mouse,Accessories,1500.0,700.0,P10007,Global Tech Supplies,contact@globaltech.com
+LED Desk Lamp,Furniture,2200.0,1000.0,P10008,FurnitureWorld Inc.,sales@furnitureworld.com
+Laptop Backpack,Accessories,2800.0,1200.0,P10009,SupplyCo Direct,support@supplyco.com
+Mechanical Keyboard,Electronics,4500.0,2200.0,P10010,Global Tech Supplies,contact@globaltech.com
+Wireless Earbuds,Electronics,6500.0,3200.0,P10011,Global Tech Supplies,contact@globaltech.com
+Bookshelf,Furniture,8500.0,4200.0,P10012,FurnitureWorld Inc.,sales@furnitureworld.com
+Ergonomic Office Chair,Furniture,14500.0,7500.0,P10013,FurnitureWorld Inc.,sales@furnitureworld.com
+Laser Printer,Electronics,18500.0,9500.0,P10014,Global Tech Supplies,contact@globaltech.com
+4K Smart Monitor,Electronics,28000.0,15000.0,P10015,Global Tech Supplies,contact@globaltech.com
+Tablet,Electronics,32000.0,18000.0,P10016,Global Tech Supplies,contact@globaltech.com
+Standing Desk,Furniture,38000.0,20000.0,P10017,FurnitureWorld Inc.,sales@furnitureworld.com
+Smartphone,Electronics,55000.0,32000.0,P10018,Global Tech Supplies,contact@globaltech.com
+Gaming Laptop,Electronics,95000.0,58000.0,P10019,Global Tech Supplies,contact@globaltech.com
