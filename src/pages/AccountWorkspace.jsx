@@ -1,171 +1,202 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Package, Upload, CheckCircle2, XCircle, RefreshCw, Plus,
+  Search, FileSpreadsheet, Boxes, ClipboardCheck, AlertCircle,
+  Download, TrendingUp, IndianRupee, Sparkles, ArrowUpRight,
+  Layers3, CircleCheck, Clock3, FileUp
+} from "lucide-react";
 
-const API = "http://127.0.0.1:5000";
+const API = (
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:5000"
+).replace(/\/$/, "");
+
+const authHeaders = (token, json = false) => ({
+  Authorization: `Bearer ${token}`,
+  ...(json ? { "Content-Type": "application/json" } : {}),
+});
+
+const money = (value) =>
+  `₹${Number(value ?? 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 
 const initialProduct = {
   sku: "",
   name: "",
-  brand: "",
-  model: "",
-  category: "Electronics",
-  currentPrice: "",
-  unitCost: "",
+  category: "",
+  current_price: "",
+  unit_cost: "",
   inventory: "",
-  minMarginPct: "0",
-  maxDiscountPct: "30",
-  region: "",
 };
 
-function headers(token, json = true) {
-  return {
-    Authorization: `Bearer ${token}`,
-    ...(json ? { "Content-Type": "application/json" } : {}),
-  };
-}
+const inputClass =
+  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50";
+
+const primaryButton =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function AccountWorkspace({ token, user }) {
-  const [retailers, setRetailers] = useState([]);
+  const isAdmin = user?.role === "admin";
+
+  const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
-  const [form, setForm] = useState({
-    displayName: "",
-    username: "",
-    password: "",
-  });
-  const [product, setProduct] = useState(initialProduct);
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [decisionId, setDecisionId] = useState(null);
+  const [product, setProduct] = useState(initialProduct);
+  const [productFile, setProductFile] = useState(null);
+  const [salesFile, setSalesFile] = useState(null);
+  const [productPreview, setProductPreview] = useState([]);
+  const [salesPreview, setSalesPreview] = useState([]);
 
-  async function readResponse(response) {
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data.error || `Request failed (${response.status})`);
-    }
-    return data;
-  }
-
-  async function load() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      if (user.role === "admin") {
-        const response = await fetch(`${API}/api/admin/retailers`, {
-          headers: headers(token, false),
-        });
-        setRetailers(await readResponse(response));
-      } else {
-        const [productResponse, recommendationResponse] = await Promise.all([
-          fetch(`${API}/api/products`, {
-            headers: headers(token, false),
-          }),
-          fetch(`${API}/api/recommendations`, {
-            headers: headers(token, false),
-          }),
-        ]);
+      const urls = [
+        `${API}/api/products`,
+        `${API}/api/recommendations`,
+      ];
 
-        const [productData, recommendationData] = await Promise.all([
-          readResponse(productResponse),
-          readResponse(recommendationResponse),
-        ]);
+      const responses = await Promise.all(
+        urls.map((url) =>
+          fetch(url, { headers: authHeaders(token) })
+        )
+      );
 
-        setProducts(productData);
-        setRecommendations(recommendationData);
-      }
+      const data = await Promise.all(
+        responses.map(async (response) => {
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(body.error || `API error: ${response.status}`);
+          }
+          return body;
+        })
+      );
+
+      setProducts(
+        Array.isArray(data[0]) ? data[0] : data[0].products || []
+      );
+      setRecommendations(
+        Array.isArray(data[1])
+          ? data[1]
+          : data[1].recommendations || []
+      );
     } catch (err) {
-      setError(err.message);
+      setError(
+        `${err.message}. Check that the backend is running at ${API}.`
+      );
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
 
   useEffect(() => {
-    load();
-  }, [token, user.role]);
+    loadData();
+  }, [loadData]);
 
-  async function createRetailer(event) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return products;
 
-    try {
-      const response = await fetch(`${API}/api/admin/retailers`, {
-        method: "POST",
-        headers: headers(token),
-        body: JSON.stringify(form),
-      });
+    return products.filter((item) =>
+      [item.name, item.sku, item.category].some((value) =>
+        String(value ?? "").toLowerCase().includes(query)
+      )
+    );
+  }, [products, search]);
 
-      await readResponse(response);
-      setMessage("Retailer account created successfully.");
-      setForm({ displayName: "", username: "", password: "" });
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
+  const pending = recommendations.filter(
+    (item) => String(item.status || "pending").toLowerCase() === "pending"
+  );
 
-  async function toggleRetailer(retailer) {
-    setError("");
-    setMessage("");
-
-    try {
-      const response = await fetch(
-        `${API}/api/admin/retailers/${retailer.id}`,
-        {
-          method: "PATCH",
-          headers: headers(token),
-          body: JSON.stringify({ active: !retailer.active }),
-        }
-      );
-
-      await readResponse(response);
-      setMessage(
-        `${retailer.display_name} account ${
-          retailer.active ? "deactivated" : "activated"
-        }.`
-      );
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
+  const inventoryUnits = products.reduce(
+    (sum, item) => sum + Number(item.inventory ?? item.stock ?? 0),
+    0
+  );
 
   async function addProduct(event) {
     event.preventDefault();
+    setBusy(true);
     setError("");
     setMessage("");
 
     try {
-      const payload = {
-        ...product,
-        currentPrice: Number(product.currentPrice),
-        unitCost: Number(product.unitCost),
-        inventory: Number(product.inventory),
-        minMarginPct: Number(product.minMarginPct),
-        maxDiscountPct: Number(product.maxDiscountPct),
-      };
-
       const response = await fetch(`${API}/api/products`, {
         method: "POST",
-        headers: headers(token),
-        body: JSON.stringify(payload),
+        headers: authHeaders(token, true),
+        body: JSON.stringify({
+          ...product,
+          sku: product.sku.trim(),
+          name: product.name.trim(),
+          category: product.category.trim(),
+          current_price: Number(product.current_price),
+          unit_cost: Number(product.unit_cost),
+          inventory: Number(product.inventory),
+        }),
       });
 
-      await readResponse(response);
-      setMessage("Product saved to your account.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to add product.");
+
       setProduct(initialProduct);
-      await load();
+      setMessage(data.message || "Product added successfully.");
+      await loadData();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function uploadCsv(event, endpoint, label) {
-    const file = event.target.files?.[0];
+  function inspectFile(file, kind) {
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setError("Please select a CSV file.");
+      return;
+    }
+
+    setError("");
+    setMessage("");
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const rows = String(reader.result || "")
+        .split(/\r?\n/)
+        .filter((line) => line.trim())
+        .slice(0, 6)
+        .map((line) => line.split(",").map((cell) => cell.trim()));
+
+      if (kind === "products") {
+        setProductFile(file);
+        setProductPreview(rows);
+      } else {
+        setSalesFile(file);
+        setSalesPreview(rows);
+      }
+    };
+
+    reader.onerror = () => setError("Unable to read the CSV file.");
+    reader.readAsText(file);
+  }
+
+  async function importFile(kind) {
+    const file = kind === "products" ? productFile : salesFile;
+
+    if (!file) {
+      setError("Please select a CSV file first.");
+      return;
+    }
+
+    setBusy(true);
     setError("");
     setMessage("");
 
@@ -173,386 +204,692 @@ export default function AccountWorkspace({ token, user }) {
       const formData = new FormData();
       formData.append("file", file);
 
+      const endpoint =
+        kind === "products" ? "/api/products/import" : "/api/sales/import";
+
       const response = await fetch(`${API}${endpoint}`, {
         method: "POST",
-        headers: headers(token, false),
+        headers: authHeaders(token),
         body: formData,
       });
 
-      const data = await readResponse(response);
-      setMessage(
-        `${label}: imported ${data.accepted ?? 0} rows; ${
-          data.errorCount ?? 0
-        } rows had errors.`
-      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "CSV import failed.");
 
-      if (data.errors?.length) {
-        setError(JSON.stringify(data.errors.slice(0, 5)));
+      setMessage(data.message || "CSV imported successfully.");
+
+      if (kind === "products") {
+        setProductFile(null);
+        setProductPreview([]);
+      } else {
+        setSalesFile(null);
+        setSalesPreview([]);
       }
 
-      await load();
+      await loadData();
     } catch (err) {
       setError(err.message);
     } finally {
-      event.target.value = "";
+      setBusy(false);
     }
   }
 
-  async function decide(id, decision) {
+  async function decide(item, decision) {
+    setDecisionId(item.id);
     setError("");
     setMessage("");
 
     try {
       const response = await fetch(
-        `${API}/api/recommendations/${id}/decision`,
+        `${API}/api/recommendations/${item.id}/decision`,
         {
           method: "POST",
-          headers: headers(token),
+          headers: authHeaders(token, true),
           body: JSON.stringify({ decision }),
         }
       );
 
-      const data = await readResponse(response);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to save decision.");
+
       setMessage(data.message || `Recommendation ${decision}.`);
-      await load();
+      await loadData();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setDecisionId(null);
     }
   }
 
+  function downloadTemplate(kind) {
+    const content =
+      kind === "products"
+        ? "sku,name,category,current_price,unit_cost,inventory\nSKU001,Sample Product,General,100,60,25\n"
+        : "date,sku,quantity,unit_price\n2026-01-15,SKU001,2,100\n";
+
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/csv;charset=utf-8" })
+    );
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${kind}-template.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-semibold text-blue-700">
-          {user.role === "admin"
-            ? "PLATFORM ADMINISTRATION"
-            : "SHOP SETUP & OPERATIONS"}
-        </p>
+    <main className="min-w-0 space-y-7 pb-8 text-slate-800">
+      {/* Page heading */}
+      <header className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 p-6 text-white shadow-lg shadow-indigo-100 sm:p-8">
+        <div className="pointer-events-none absolute -right-8 -top-16 h-64 w-64 rounded-full border-[35px] border-white/10" />
+        <div className="pointer-events-none absolute -bottom-24 right-36 h-48 w-48 rounded-full bg-violet-400/20 blur-2xl" />
 
-        <h1 className="mt-1 text-3xl font-bold tracking-tight">
-          {user.role === "admin"
-            ? "Retailer account management"
-            : "Products, data & approvals"}
-        </h1>
+        <div className="relative flex flex-wrap items-center justify-between gap-5">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-indigo-50">
+              <Sparkles size={14} />
+              Retail Price Optimizer
+            </div>
 
-        <p className="mt-2 text-sm text-slate-500">
-          {user.role === "admin"
-            ? "Create retailer accounts and control their access."
-            : "Step 1: add products. Step 2: import sales. Step 3: optimize and review recommendations. Your data belongs to this account."}
-        </p>
-      </div>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              {isAdmin ? "Account Management" : "Products & Data Import"}
+            </h1>
 
-      {message && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-          {message}
-        </div>
-      )}
-
-      {error && (
-        <div className="break-words rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </div>
-      )}
-
-      {user.role === "admin" ? (
-        <>
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="font-semibold">Create retailer account</h2>
-            <p className="mb-4 mt-1 text-sm text-slate-500">
-              Create credentials for the shop owner. Share the password
-              privately and securely.
+            <p className="mt-2 max-w-xl text-sm leading-6 text-indigo-100 sm:text-base">
+              Manage your product catalog, track inventory and review
+              smarter pricing recommendations from one workspace.
             </p>
 
-            <form
-              onSubmit={createRetailer}
-              className="grid gap-3 md:grid-cols-3"
-            >
-              <input
-                required
-                placeholder="Retailer display name"
-                className="rounded-xl border p-3"
-                value={form.displayName}
-                onChange={(e) =>
-                  setForm({ ...form, displayName: e.target.value })
-                }
+            <p className="mt-4 text-sm text-indigo-100">
+              Welcome back, <span className="font-semibold text-white">{user?.name || user?.username || "User"}</span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20 disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+            Refresh data
+          </button>
+        </div>
+      </header>
+
+      {/* Alerts */}
+      {error && (
+        <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 shrink-0" size={19} />
+          <div className="min-w-0">
+            <p className="font-semibold">Something went wrong</p>
+            <p className="mt-1 break-words">{error}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="ml-auto text-red-500 hover:text-red-700"
+            aria-label="Dismiss error"
+          >
+            <XCircle size={18} />
+          </button>
+        </div>
+      )}
+
+      {message && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CircleCheck size={19} className="shrink-0" />
+          <span>{message}</span>
+          <button
+            type="button"
+            onClick={() => setMessage("")}
+            className="ml-auto"
+            aria-label="Dismiss message"
+          >
+            <XCircle size={17} />
+          </button>
+        </div>
+      )}
+
+      {/* Stat cards */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Total products"
+          value={loading ? "…" : products.length}
+          caption="Products in your catalog"
+          icon={Package}
+          tone="indigo"
+        />
+        <StatCard
+          title="Inventory units"
+          value={loading ? "…" : inventoryUnits.toLocaleString("en-IN")}
+          caption="Units currently in stock"
+          icon={Boxes}
+          tone="blue"
+        />
+        <StatCard
+          title="Pending approvals"
+          value={loading ? "…" : pending.length}
+          caption="Recommendations to review"
+          icon={ClipboardCheck}
+          tone="amber"
+        />
+        <StatCard
+          title="Price recommendations"
+          value={loading ? "…" : recommendations.length}
+          caption="Total recommendations"
+          icon={TrendingUp}
+          tone="emerald"
+        />
+      </section>
+
+      {/* Navigation tabs */}
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        <NavTab active={tab === "products"} onClick={() => setTab("products")} icon={Package}>
+          Product catalog
+        </NavTab>
+
+        {!isAdmin && (
+          <NavTab active={tab === "imports"} onClick={() => setTab("imports")} icon={FileSpreadsheet}>
+            Data imports
+          </NavTab>
+        )}
+
+        {!isAdmin && (
+          <NavTab active={tab === "approvals"} onClick={() => setTab("approvals")} icon={ClipboardCheck}>
+            Price approvals
+            {pending.length > 0 && (
+              <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                {pending.length}
+              </span>
+            )}
+          </NavTab>
+        )}
+      </nav>
+
+      {/* Product catalog */}
+      {tab === "products" && (
+        <section className="grid min-w-0 grid-cols-1 items-start gap-5 xl:grid-cols-3">
+          {!isAdmin && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <SectionHeading
+                icon={Plus}
+                title="Add new product"
+                subtitle="Enter product details to expand your catalog."
               />
 
-              <input
-                required
-                placeholder="Username"
-                className="rounded-xl border p-3"
-                value={form.username}
-                onChange={(e) =>
-                  setForm({ ...form, username: e.target.value })
-                }
-              />
+              <form onSubmit={addProduct} className="mt-6 space-y-4">
+                {[
+                  ["sku", "SKU / Product code", "e.g. SKU001"],
+                  ["name", "Product name", "Enter product name"],
+                  ["category", "Category", "e.g. Electronics"],
+                  ["current_price", "Selling price (₹)", "0.00"],
+                  ["unit_cost", "Unit cost (₹)", "0.00"],
+                  ["inventory", "Stock quantity", "0"],
+                ].map(([key, label, placeholder]) => {
+                  const numeric = ["current_price", "unit_cost", "inventory"].includes(key);
+                  return (
+                    <label key={key} className="block">
+                      <span className="mb-2 block text-xs font-semibold text-slate-600">
+                        {label}
+                      </span>
+                      <input
+                        className={inputClass}
+                        placeholder={placeholder}
+                        required
+                        type={numeric ? "number" : "text"}
+                        min={numeric ? "0" : undefined}
+                        step={
+                          ["current_price", "unit_cost"].includes(key)
+                            ? "0.01"
+                            : key === "inventory"
+                              ? "1"
+                              : undefined
+                        }
+                        value={product[key]}
+                        onChange={(event) =>
+                          setProduct({ ...product, [key]: event.target.value })
+                        }
+                      />
+                    </label>
+                  );
+                })}
 
-              <input
-                required
-                minLength={12}
-                type="password"
-                placeholder="Temporary password (12+ chars)"
-                className="rounded-xl border p-3"
-                value={form.password}
-                onChange={(e) =>
-                  setForm({ ...form, password: e.target.value })
-                }
-              />
+                <button disabled={busy} className={`${primaryButton} w-full`}>
+                  {busy ? (
+                    <RefreshCw size={17} className="animate-spin" />
+                  ) : (
+                    <Plus size={17} />
+                  )}
+                  {busy ? "Saving product..." : "Add product"}
+                </button>
+              </form>
+            </div>
+          )}
 
-              <button className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white md:col-span-3">
-                Create account
-              </button>
-            </form>
-          </section>
+          <div className={`min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${isAdmin ? "xl:col-span-3" : "xl:col-span-2"}`}>
+            <div className="border-b border-slate-100 p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <SectionHeading
+                  icon={Layers3}
+                  title="Product catalog"
+                  subtitle="Browse and search your current products."
+                />
+                <span className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">
+                  {filteredProducts.length} items
+                </span>
+              </div>
 
-          <section className="rounded-2xl border bg-white p-6">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold">Retailer accounts</h2>
-              <button
-                onClick={load}
-                className="rounded-lg border px-3 py-2 text-sm"
-              >
-                Refresh
-              </button>
+              <div className="relative mt-5">
+                <Search
+                  size={18}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  className={`${inputClass} pl-11`}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by product, SKU or category..."
+                />
+              </div>
             </div>
 
             {loading ? (
-              <p className="py-5 text-sm text-slate-500">Loading…</p>
+              <LoadingState />
+            ) : filteredProducts.length === 0 ? (
+              <EmptyState
+                title={search ? "No matching products" : "Your catalog is empty"}
+                text={
+                  search
+                    ? "Try a different product name, SKU or category."
+                    : "Add your first product or import a CSV file to get started."
+                }
+                icon={Package}
+              />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-slate-500">
-                      <th className="p-3">Retailer</th>
-                      <th className="p-3">Username</th>
-                      <th className="p-3">Products</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3">Action</th>
+                <table className="w-full min-w-[620px] text-left text-sm">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-5 py-4 font-bold">Product</th>
+                      <th className="px-4 py-4 font-bold">SKU</th>
+                      <th className="px-4 py-4 font-bold">Category</th>
+                      <th className="px-4 py-4 text-right font-bold">Price</th>
+                      <th className="px-5 py-4 text-right font-bold">Stock</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {retailers.map((retailer) => (
-                      <tr key={retailer.id} className="border-b">
-                        <td className="p-3">{retailer.display_name}</td>
-                        <td className="p-3">{retailer.username}</td>
-                        <td className="p-3">{retailer.product_count}</td>
-                        <td className="p-3">
-                          {retailer.active ? "Active" : "Disabled"}
-                        </td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => toggleRetailer(retailer)}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                              retailer.active
-                                ? "border border-red-200 text-red-700"
-                                : "bg-emerald-600 text-white"
-                            }`}
-                          >
-                            {retailer.active ? "Deactivate" : "Activate"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredProducts.map((item, index) => {
+                      const stock = Number(item.inventory ?? item.stock ?? 0);
+                      return (
+                        <tr
+                          key={item.id ?? item.sku ?? index}
+                          className="transition hover:bg-indigo-50/40"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                                <Package size={19} />
+                              </div>
+                              <span className="font-semibold text-slate-800">
+                                {item.name || "Unnamed product"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-slate-500">
+                            {item.sku || "—"}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-600">
+                              {item.category || "General"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right font-bold text-slate-800">
+                            {money(item.current_price ?? item.currentPrice)}
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <span className={`inline-flex rounded-lg px-2.5 py-1.5 text-xs font-bold ${stock <= 5 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+                              {stock.toLocaleString("en-IN")}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
-          </section>
-        </>
-      ) : (
-        <>
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="font-semibold">1. Import product catalog</h2>
-            <p className="my-2 text-sm text-slate-500">
-              Required columns: sku,name,category,currentPrice,unitCost,inventory.
-              Optional: brand,model,minMarginPct,maxDiscountPct,region.
-            </p>
 
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) =>
-                uploadCsv(event, "/api/products/import", "Product import")
-              }
-              className="block w-full rounded-xl border p-3"
-            />
-          </section>
-
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="font-semibold">2. Import sales history</h2>
-            <p className="my-2 text-sm text-slate-500">
-              Required columns: sku,date,quantity,unitPrice. Optional:
-              region,customerType. Dates must use YYYY-MM-DD. Each SKU must
-              already exist in your product catalog.
-            </p>
-
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) =>
-                uploadCsv(event, "/api/sales/import", "Sales import")
-              }
-              className="block w-full rounded-xl border p-3"
-            />
-          </section>
-
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="mb-4 font-semibold">3. Add a product manually</h2>
-
-            <form
-              onSubmit={addProduct}
-              className="grid gap-3 md:grid-cols-3"
-            >
-              {[
-                ["sku", "SKU"],
-                ["name", "Product name"],
-                ["brand", "Brand"],
-                ["model", "Model"],
-                ["category", "Category"],
-                ["currentPrice", "Current price (INR)"],
-                ["unitCost", "Unit cost (INR)"],
-                ["inventory", "Inventory"],
-                ["minMarginPct", "Minimum margin %"],
-                ["maxDiscountPct", "Maximum discount %"],
-                ["region", "Region"],
-              ].map(([key, label]) => (
-                <label key={key} className="text-sm font-medium">
-                  {label}
-                  <input
-                    required={!["brand", "model", "region"].includes(key)}
-                    type={
-                      [
-                        "currentPrice",
-                        "unitCost",
-                        "inventory",
-                        "minMarginPct",
-                        "maxDiscountPct",
-                      ].includes(key)
-                        ? "number"
-                        : "text"
-                    }
-                    min={
-                      key === "currentPrice"
-                        ? "0.01"
-                        : [
-                            "unitCost",
-                            "inventory",
-                            "minMarginPct",
-                            "maxDiscountPct",
-                          ].includes(key)
-                        ? "0"
-                        : undefined
-                    }
-                    step="any"
-                    className="mt-1 w-full rounded-xl border p-3 font-normal"
-                    value={product[key]}
-                    onChange={(e) =>
-                      setProduct({ ...product, [key]: e.target.value })
-                    }
-                  />
-                </label>
-              ))}
-
-              <button className="rounded-xl bg-blue-600 p-3 font-semibold text-white md:col-span-3">
-                Save product
-              </button>
-            </form>
-          </section>
-
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="mb-3 font-semibold">
-              My products ({products.length})
-            </h2>
-
-            {products.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No products yet. Add a product or import your CSV.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-slate-500">
-                      <th className="p-3">SKU</th>
-                      <th className="p-3">Product</th>
-                      <th className="p-3">Category</th>
-                      <th className="p-3">Price</th>
-                      <th className="p-3">Cost</th>
-                      <th className="p-3">Stock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((item) => (
-                      <tr key={item.id} className="border-b">
-                        <td className="p-3">{item.sku}</td>
-                        <td className="p-3">{item.name}</td>
-                        <td className="p-3">{item.category}</td>
-                        <td className="p-3">
-                          ₹{Number(item.currentPrice).toLocaleString("en-IN")}
-                        </td>
-                        <td className="p-3">
-                          ₹{Number(item.unitCost).toLocaleString("en-IN")}
-                        </td>
-                        <td className="p-3">{item.inventory}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl border bg-white p-6">
-            <h2 className="mb-3 font-semibold">
-              Price recommendation approvals
-            </h2>
-
-            {recommendations.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No recommendations yet. Run an optimization first.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {recommendations.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"
-                  >
-                    <div>
-                      <div className="font-semibold">
-                        {item.product_name} · {item.objective}
-                      </div>
-                      <div className="text-sm text-slate-600">
-                        {`₹${Number(item.current_price).toLocaleString("en-IN")} → ₹${Number(item.recommended_price).toLocaleString("en-IN")} · ${item.status}`}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {item.reason} · {item.created_at}
-                      </div>
-                    </div>
-
-                    {item.status === "pending" && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => decide(item.id, "approved")}
-                          className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => decide(item.id, "rejected")}
-                          className="rounded-lg border px-3 py-2 text-sm"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
+            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-4 text-xs text-slate-400">
+              <span>Product inventory overview</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Data from your workspace
+              </span>
+            </div>
+          </div>
+        </section>
       )}
+
+      {/* Data imports */}
+      {!isAdmin && tab === "imports" && (
+        <section>
+          <SectionHeading
+            icon={FileUp}
+            title="Import your data"
+            subtitle="Upload CSV files to quickly populate products and sales history."
+          />
+          <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <ImportPanel
+              title="Product catalog"
+              description="Import product names, prices, costs and stock."
+              file={productFile}
+              preview={productPreview}
+              busy={busy}
+              onFile={(file) => inspectFile(file, "products")}
+              onImport={() => importFile("products")}
+              onTemplate={() => downloadTemplate("products")}
+            />
+            <ImportPanel
+              title="Sales history"
+              description="Import sales dates, quantities and unit prices."
+              file={salesFile}
+              preview={salesPreview}
+              busy={busy}
+              onFile={(file) => inspectFile(file, "sales")}
+              onImport={() => importFile("sales")}
+              onTemplate={() => downloadTemplate("sales")}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Price approvals */}
+      {!isAdmin && tab === "approvals" && (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 p-5 sm:p-6">
+            <SectionHeading
+              icon={TrendingUp}
+              title="Price recommendations"
+              subtitle="Review suggested prices and record your decision."
+            />
+          </div>
+
+          {loading ? (
+            <LoadingState />
+          ) : recommendations.length === 0 ? (
+            <EmptyState
+              title="No recommendations yet"
+              text="Run price optimization to generate pricing suggestions."
+              icon={TrendingUp}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-5 py-4 font-bold">Product</th>
+                    <th className="px-4 py-4 text-right font-bold">Current price</th>
+                    <th className="px-4 py-4 text-right font-bold">Suggested price</th>
+                    <th className="px-4 py-4 font-bold">Status</th>
+                    <th className="px-5 py-4 font-bold">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recommendations.map((item) => {
+                    const status = String(item.status || "pending").toLowerCase();
+                    return (
+                      <tr key={item.id} className="transition hover:bg-slate-50/80">
+                        <td className="px-5 py-4 font-semibold">
+                          {item.product_name || item.product || `#${item.id}`}
+                        </td>
+                        <td className="px-4 py-4 text-right text-slate-500">
+                          {money(item.current_price ?? item.currentPrice)}
+                        </td>
+                        <td className="px-4 py-4 text-right font-bold text-indigo-700">
+                          {money(item.recommended_price ?? item.recommendedPrice)}
+                        </td>
+                        <td className="px-4 py-4">
+                          <StatusBadge status={status} />
+                        </td>
+                        <td className="px-5 py-4">
+                          {status === "pending" ? (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                title="Approve recommendation"
+                                disabled={decisionId === item.id}
+                                onClick={() => decide(item, "approved")}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
+                              >
+                                <CheckCircle2 size={15} />
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                title="Reject recommendation"
+                                disabled={decisionId === item.id}
+                                onClick={() => decide(item, "rejected")}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                              >
+                                <XCircle size={15} />
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">Decision recorded</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+    </main>
+  );
+}
+
+function StatCard({ title, value, caption, icon: Icon, tone }) {
+  const tones = {
+    indigo: "bg-indigo-50 text-indigo-600",
+    blue: "bg-sky-50 text-sky-600",
+    amber: "bg-amber-50 text-amber-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+  };
+
+  return (
+    <article className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-200/60">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{title}</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
+            {value}
+          </p>
+        </div>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tones[tone]}`}>
+          <Icon size={23} />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+        <ArrowUpRight size={14} className="text-emerald-500" />
+        {caption}
+      </div>
+    </article>
+  );
+}
+
+function SectionHeading({ icon: Icon, title, subtitle }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+        <Icon size={20} />
+      </div>
+      <div className="min-w-0">
+        <h2 className="font-bold tracking-tight text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm leading-5 text-slate-500">{subtitle}</p>
+      </div>
     </div>
+  );
+}
+
+function NavTab({ active, onClick, icon: Icon, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+        active
+          ? "bg-indigo-600 text-white shadow-sm"
+          : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+      }`}
+    >
+      <Icon size={17} />
+      {children}
+    </button>
+  );
+}
+
+function StatusBadge({ status }) {
+  const styles = {
+    pending: "bg-amber-50 text-amber-700 ring-amber-200",
+    approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    rejected: "bg-red-50 text-red-700 ring-red-200",
+  };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold capitalize ring-1 ring-inset ${styles[status] || "bg-slate-100 text-slate-600 ring-slate-200"}`}>
+      {status === "pending" ? <Clock3 size={13} /> : <CheckCircle2 size={13} />}
+      {status}
+    </span>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-14">
+      <RefreshCw size={25} className="animate-spin text-indigo-500" />
+      <p className="mt-3 text-sm font-medium text-slate-600">Loading your data...</p>
+      <p className="mt-1 text-xs text-slate-400">Please wait a moment</p>
+    </div>
+  );
+}
+
+function EmptyState({ title, text, icon: Icon }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+        <Icon size={26} />
+      </div>
+      <h3 className="mt-4 font-bold text-slate-800">{title}</h3>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">{text}</p>
+    </div>
+  );
+}
+
+function ImportPanel({
+  title,
+  description,
+  file,
+  preview,
+  busy,
+  onFile,
+  onImport,
+  onTemplate,
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6">
+      <SectionHeading
+        icon={FileSpreadsheet}
+        title={title}
+        subtitle={description}
+      />
+
+      <div className="mt-5 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-6 text-center transition hover:border-indigo-400 hover:bg-indigo-50">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+          <Upload size={25} />
+        </div>
+        <h3 className="mt-4 text-sm font-bold text-slate-800">
+          {file ? "File ready to import" : "Upload your CSV file"}
+        </h3>
+        <p className="mt-2 break-all text-xs text-slate-500">
+          {file?.name || "Choose a .csv file from your computer"}
+        </p>
+
+        <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700">
+          <FileUp size={17} />
+          Choose CSV file
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(event) => {
+              onFile(event.target.files?.[0] || null);
+              event.target.value = "";
+            }}
+          />
+        </label>
+
+        <p className="mt-3 text-[11px] text-slate-400">
+          CSV format only
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onTemplate}
+        className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600 transition hover:text-indigo-800"
+      >
+        <Download size={16} />
+        Download sample template
+      </button>
+
+      {preview.length > 0 && (
+        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
+          <div className="flex items-center justify-between bg-slate-50 px-3 py-3">
+            <p className="text-xs font-bold text-slate-700">File preview</p>
+            <span className="text-[11px] text-slate-400">
+              First {preview.length} rows
+            </span>
+          </div>
+          <div className="max-h-48 overflow-auto">
+            <table className="w-full text-left text-xs">
+              <tbody>
+                {preview.map((row, i) => (
+                  <tr
+                    key={i}
+                    className={i === 0 ? "bg-indigo-50 font-bold text-indigo-800" : "border-t border-slate-100 text-slate-600"}
+                  >
+                    {row.map((cell, j) => (
+                      <td key={j} className="whitespace-nowrap px-3 py-2.5">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onImport}
+        disabled={busy || !file}
+        className={`${primaryButton} mt-5 w-full`}
+      >
+        {busy ? (
+          <RefreshCw size={17} className="animate-spin" />
+        ) : (
+          <Upload size={17} />
+        )}
+        {busy ? "Importing data..." : "Import CSV"}
+      </button>
+    </section>
   );
 }

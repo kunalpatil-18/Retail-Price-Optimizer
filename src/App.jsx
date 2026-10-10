@@ -1,10 +1,11 @@
-
 import { useEffect, useState } from "react";
+
 import PriceOptimization from "./pages/PriceOptimization";
 import WhatIfAnalysis from "./pages/WhatIfAnalysis";
 import Inventory from "./pages/Inventory";
 import Analytics from "./pages/Analytics";
 import AccountWorkspace from "./pages/AccountWorkspace";
+
 import AuthGate from "./AuthGate";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -14,12 +15,16 @@ const API = "http://127.0.0.1:5000";
 
 function App() {
   const [activePage, setActivePage] = useState("dashboard");
+
+  // Each browser tab maintains its own login token.
   const [token, setToken] = useState(
-    () => localStorage.getItem("rpo_token") || ""
+    () => sessionStorage.getItem("rpo_token") || ""
   );
+
   const [user, setUser] = useState(null);
+
   const [checking, setChecking] = useState(
-    Boolean(localStorage.getItem("rpo_token"))
+    () => Boolean(sessionStorage.getItem("rpo_token"))
   );
 
   useEffect(() => {
@@ -31,26 +36,40 @@ function App() {
 
     let cancelled = false;
 
-    fetch(`${API}/api/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
+    async function verifySession() {
+      setChecking(true);
+
+      try {
+        const response = await fetch(`${API}/api/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
         const data = await response.json();
+
         if (!response.ok) {
-          throw new Error(data.error || "Session expired");
+          throw new Error(data.error || "Session expired.");
         }
-        if (!cancelled) setUser(data);
-      })
-      .catch(() => {
+
         if (!cancelled) {
-          localStorage.removeItem("rpo_token");
+          setUser(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          sessionStorage.removeItem("rpo_token");
           setToken("");
           setUser(null);
+          setActivePage("dashboard");
         }
-      })
-      .finally(() => {
-        if (!cancelled) setChecking(false);
-      });
+      } finally {
+        if (!cancelled) {
+          setChecking(false);
+        }
+      }
+    }
+
+    verifySession();
 
     return () => {
       cancelled = true;
@@ -58,7 +77,8 @@ function App() {
   }, [token]);
 
   function onLogin(newToken, newUser) {
-    localStorage.setItem("rpo_token", newToken);
+    sessionStorage.setItem("rpo_token", newToken);
+
     setToken(newToken);
     setUser(newUser);
     setChecking(false);
@@ -66,25 +86,34 @@ function App() {
   }
 
   async function logout() {
-    try {
-      await fetch(`${API}/api/auth/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (error) {
-      console.error("Logout request failed:", error);
-    }
+    const currentToken = token;
 
-    localStorage.removeItem("rpo_token");
+    sessionStorage.removeItem("rpo_token");
     setToken("");
     setUser(null);
     setActivePage("dashboard");
+    setChecking(false);
+
+    try {
+      if (currentToken) {
+        await fetch(`${API}/api/auth/logout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${currentToken}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Logout request failed:", error);
+    }
   }
 
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-500">
-        Checking session…
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-sm text-slate-500">
+          Checking session...
+        </div>
       </div>
     );
   }
@@ -115,12 +144,19 @@ function App() {
             />
           )}
 
+          {/* Accounts workspace: retailer and admin */}
           {activePage === "accounts" && (
-            <AccountWorkspace token={token} user={user} />
+            <AccountWorkspace
+              token={token}
+              user={user}
+            />
           )}
 
           {!isAdmin && activePage === "optimization" && (
-            <PriceOptimization token={token} user={user} />
+            <PriceOptimization
+              token={token}
+              user={user}
+            />
           )}
 
           {!isAdmin && activePage === "whatif" && (
@@ -133,6 +169,32 @@ function App() {
 
           {!isAdmin && activePage === "analytics" && (
             <Analytics token={token} />
+          )}
+
+          {/* Fallback for an unknown page key */}
+          {![
+            "dashboard",
+            "accounts",
+            "optimization",
+            "whatif",
+            "inventory",
+            "analytics",
+          ].includes(activePage) && (
+            <section className="rounded-2xl border border-slate-200 bg-white p-8">
+              <h2 className="text-lg font-bold text-slate-900">
+                Page not found
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Please select a page from the sidebar.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActivePage("dashboard")}
+                className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Back to dashboard
+              </button>
+            </section>
           )}
         </main>
       </div>

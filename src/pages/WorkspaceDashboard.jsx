@@ -1,929 +1,891 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  BarChart3,
-  CheckCircle2,
-  Clock3,
-  Database,
-  Download,
-  FlaskConical,
+  Users,
+  UserCheck,
+  UserX,
   Package,
-  RefreshCw,
   Search,
-  ShoppingBag,
-  Sparkles,
-  Tag,
-  TrendingUp,
-  Upload,
-  Wallet,
+  RefreshCw,
+  Plus,
+  ShieldCheck,
+  Store,
+  ArrowRight,
+  Activity,
+  AlertCircle,
+  LayoutDashboard,
+  CheckCircle2,
   XCircle,
+  ExternalLink,
 } from "lucide-react";
 
 const API = "http://127.0.0.1:5000";
 
-const money = (value) =>
-  `₹${Number(value || 0).toLocaleString("en-IN", {
-    maximumFractionDigits: 2,
-  })}`;
+const headers = (token, json = false) => ({
+  Authorization: `Bearer ${token}`,
+  ...(json ? { "Content-Type": "application/json" } : {}),
+});
 
-const number = (value) =>
-  Number(value || 0).toLocaleString("en-IN", {
-    maximumFractionDigits: 0,
+const isActive = (retailer) =>
+  retailer.active === true ||
+  retailer.active === 1 ||
+  retailer.active === "1";
+
+const formatDate = (value) => {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
-
-const getName = (p) => p.name || p.product_name || "Unnamed product";
-const getSku = (p) => p.sku || p.SKU || "—";
-const getPrice = (p) =>
-  Number(p.currentPrice ?? p.current_price ?? p.price ?? 0);
-const getCost = (p) => Number(p.unitCost ?? p.unit_cost ?? p.cost ?? 0);
-const getStock = (p) =>
-  Number(p.inventory ?? p.stock ?? p.quantity_in_stock ?? 0);
-
-async function fetchJson(url, token) {
-  const response = await fetch(`${API}${url}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed (${response.status})`);
-  }
-
-  return data;
-}
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  accent = "blue",
-  onClick,
-}) {
-  const accents = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-100",
-    green: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    amber: "bg-amber-50 text-amber-700 ring-amber-100",
-    violet: "bg-violet-50 text-violet-700 ring-violet-100",
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className="mt-3 break-words text-2xl font-bold tracking-tight text-slate-900">
-            {value}
-          </p>
-        </div>
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${accents[accent]}`}
-        >
-          <Icon size={21} />
-        </span>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <span className="text-xs text-slate-500">{subtitle}</span>
-        <ArrowRight
-          size={15}
-          className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-600"
-        />
-      </div>
-    </button>
-  );
-}
-
-function SectionTitle({ title, description, action }) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-        {description && (
-          <p className="mt-1 text-sm text-slate-500">{description}</p>
-        )}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function ActionCard({ icon: Icon, title, description, onClick, color }) {
-  const colors = {
-    blue: "bg-blue-50 text-blue-700",
-    violet: "bg-violet-50 text-violet-700",
-    green: "bg-emerald-50 text-emerald-700",
-    amber: "bg-amber-50 text-amber-700",
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-200 hover:shadow-md sm:p-5"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <span
-          className={`flex h-11 w-11 items-center justify-center rounded-xl ${
-            colors[color] || colors.blue
-          }`}
-        >
-          <Icon size={21} />
-        </span>
-        <ArrowUpRight
-          size={18}
-          className="text-slate-400 group-hover:text-blue-600"
-        />
-      </div>
-      <h3 className="mt-4 font-bold text-slate-900">{title}</h3>
-      <p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>
-    </button>
-  );
-}
+};
 
 export default function WorkspaceDashboard({ token, user, onNavigate }) {
-  const [products, setProducts] = useState([]);
-  const [summary, setSummary] = useState({});
-  const [recommendations, setRecommendations] = useState([]);
+  const isAdmin = user?.role === "admin";
+
+  const [retailers, setRetailers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [updatingId, setUpdatingId] = useState(null);
 
-  const load = useCallback(async (quiet = false) => {
-    if (quiet) setRefreshing(true);
-    else setLoading(true);
+  const loadRetailers = useCallback(
+    async (isRefresh = false) => {
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
 
-    setError("");
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-    try {
-      const [productData, salesData, recommendationData] =
-        await Promise.all([
-          fetchJson("/api/products", token),
-          fetchJson("/api/sales/summary", token),
-          fetchJson("/api/recommendations", token),
-        ]);
+      setError("");
 
-      setProducts(Array.isArray(productData) ? productData : []);
-      setSummary(
-        salesData && typeof salesData === "object" ? salesData : {}
-      );
-      setRecommendations(
-        Array.isArray(recommendationData) ? recommendationData : []
-      );
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(
-        err.message ||
-          "Dashboard data could not be loaded. Check that the backend is running."
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [token]);
+      try {
+        const response = await fetch(`${API}/api/admin/retailers`, {
+          headers: headers(token),
+        });
+
+        const data = await response.json().catch(() => []);
+
+        if (!response.ok) {
+          throw new Error(
+            data.error || "Unable to load retailer accounts."
+          );
+        }
+
+        if (!Array.isArray(data)) {
+          throw new Error("Unexpected retailer data received from server.");
+        }
+
+        setRetailers(data);
+      } catch (err) {
+        setError(err.message || "Unable to load the admin dashboard.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [token, isAdmin]
+  );
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadRetailers();
+  }, [loadRetailers]);
 
   const stats = useMemo(() => {
-    const units = Number(summary.units ?? summary.total_units ?? 0);
-    const revenue = Number(summary.revenue ?? summary.total_revenue ?? 0);
-    const salesRows = Number(
-      summary.records ?? summary.sales_rows ?? summary.total_records ?? 0
-    );
+    const activeCount = retailers.filter(isActive).length;
+    const inactiveCount = retailers.length - activeCount;
 
-    const inventoryUnits = products.reduce(
-      (total, product) => total + Math.max(0, getStock(product)),
-      0
-    );
-
-    const inventoryCostValue = products.reduce(
-      (total, product) =>
-        total + Math.max(0, getStock(product)) * Math.max(0, getCost(product)),
-      0
-    );
-
-    const inventoryRetailValue = products.reduce(
-      (total, product) =>
-        total + Math.max(0, getStock(product)) * Math.max(0, getPrice(product)),
-      0
-    );
-
-    const lowStock = products.filter((product) => {
-      const stock = getStock(product);
-      return stock > 0 && stock <= 5;
-    });
-
-    const outOfStock = products.filter((product) => getStock(product) <= 0);
-
-    const pending = recommendations.filter(
-      (item) => String(item.status || "").toLowerCase() === "pending"
-    );
-
-    const approved = recommendations.filter(
-      (item) => String(item.status || "").toLowerCase() === "approved"
-    );
-
-    const rejected = recommendations.filter(
-      (item) => String(item.status || "").toLowerCase() === "rejected"
-    );
-
-    const potentialMargin = products.reduce(
-      (total, product) =>
-        total +
-        Math.max(0, getPrice(product) - getCost(product)) *
-          Math.max(0, getStock(product)),
+    const totalProducts = retailers.reduce(
+      (total, retailer) => total + Number(retailer.product_count || 0),
       0
     );
 
     return {
-      units,
-      revenue,
-      salesRows,
-      inventoryUnits,
-      inventoryCostValue,
-      inventoryRetailValue,
-      lowStock,
-      outOfStock,
-      pending,
-      approved,
-      rejected,
-      potentialMargin,
+      total: retailers.length,
+      active: activeCount,
+      inactive: inactiveCount,
+      products: totalProducts,
     };
-  }, [products, summary, recommendations]);
+  }, [retailers]);
 
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const sorted = [...products].sort(
-      (a, b) => getStock(a) - getStock(b)
+  const filteredRetailers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return retailers.filter((retailer) => {
+      const matchesSearch =
+        !query ||
+        String(retailer.display_name || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(retailer.username || "")
+          .toLowerCase()
+          .includes(query);
+
+      const active = isActive(retailer);
+
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "active" && active) ||
+        (statusFilter === "inactive" && !active);
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [retailers, search, statusFilter]);
+
+  async function toggleRetailer(retailer) {
+    const currentlyActive = isActive(retailer);
+
+    const confirmed = window.confirm(
+      currentlyActive
+        ? `Deactivate ${retailer.display_name || retailer.username}? They will lose access to the application.`
+        : `Activate ${retailer.display_name || retailer.username}?`
     );
 
-    if (!term) return sorted;
+    if (!confirmed) return;
 
-    return sorted.filter((product) =>
-      `${getName(product)} ${getSku(product)} ${product.category || ""}`
-        .toLowerCase()
-        .includes(term)
-    );
-  }, [products, search]);
+    setUpdatingId(retailer.id);
+    setError("");
+    setMessage("");
 
-  const checklist = [
-    {
-      title: "Add your product catalog",
-      description: "Add products with selling price, cost and stock.",
-      complete: products.length > 0,
-      action: () => onNavigate("accounts"),
-      button: "Manage products",
-    },
-    {
-      title: "Import your sales history",
-      description: "Bring in dated transactions linked to your product SKUs.",
-      complete: stats.salesRows > 0,
-      action: () => onNavigate("accounts"),
-      button: "Import sales",
-    },
-    {
-      title: "Review price recommendations",
-      description: "Run the optimizer and review proposed price changes.",
-      complete: recommendations.length > 0,
-      action: () => onNavigate("optimization"),
-      button: "Open optimizer",
-    },
-  ];
+    try {
+      const response = await fetch(
+        `${API}/api/admin/retailers/${retailer.id}`,
+        {
+          method: "PATCH",
+          headers: headers(token, true),
+          body: JSON.stringify({
+            active: !currentlyActive,
+          }),
+        }
+      );
 
-  if (loading) {
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to update retailer status.");
+      }
+
+      setMessage(
+        `${retailer.display_name || retailer.username} account ${
+          currentlyActive ? "deactivated" : "activated"
+        } successfully.`
+      );
+
+      await loadRetailers(true);
+    } catch (err) {
+      setError(err.message || "Unable to update account status.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  if (!isAdmin) {
     return (
-      <div className="mx-auto max-w-7xl space-y-5">
-        <div className="h-36 animate-pulse rounded-3xl bg-slate-200" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => (
-            <div
-              key={item}
-              className="h-36 animate-pulse rounded-2xl bg-slate-200"
-            />
-          ))}
-        </div>
-        <p className="text-center text-sm text-slate-500">
-          Loading your shop data…
-        </p>
-      </div>
+      <RetailerOverview
+        user={user}
+        onNavigate={onNavigate}
+      />
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-7 pb-10">
-      {/* Welcome banner */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-blue-950 to-blue-800 p-6 text-white shadow-lg sm:p-8">
-        <div className="pointer-events-none absolute -right-10 -top-16 h-64 w-64 rounded-full border border-white/10" />
-        <div className="pointer-events-none absolute -right-2 -top-8 h-48 w-48 rounded-full border border-white/10" />
-
-        <div className="relative flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
-              <Sparkles size={14} />
-              YOUR RETAIL BUSINESS WORKSPACE
-            </div>
-
-            <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
-              Welcome back, {user?.displayName || user?.display_name || user?.username || "Retailer"}
-            </h1>
-
-            <p className="mt-3 max-w-xl text-sm leading-6 text-blue-100 sm:text-base">
-              Manage your products, monitor stock and make informed pricing
-              decisions—all from one place.
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button
-                onClick={() => onNavigate("optimization")}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-blue-900 transition hover:bg-blue-50"
-              >
-                <Tag size={17} />
-                Optimize prices
-                <ArrowRight size={16} />
-              </button>
-
-              <button
-                onClick={() => onNavigate("accounts")}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
-              >
-                <Upload size={17} />
-                Manage shop data
-              </button>
-            </div>
+    <div className="min-w-0 space-y-6">
+      {/* Page heading */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-600">
+            <ShieldCheck size={15} />
+            Platform administration
           </div>
 
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm">
-            <p className="text-xs text-blue-100">Workspace status</p>
-            <div className="mt-2 flex items-center gap-2 font-semibold">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              Account connected
-            </div>
-            <p className="mt-2 text-xs text-blue-100">
-              {lastUpdated
-                ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}`
-                : "Waiting for data"}
-            </p>
-            <button
-              onClick={() => load(true)}
-              disabled={refreshing}
-              className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-blue-100 disabled:opacity-60"
-            >
-              <RefreshCw
-                size={15}
-                className={refreshing ? "animate-spin" : ""}
-              />
-              Refresh data
-            </button>
-          </div>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Admin Overview
+          </h1>
+
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Monitor retailer accounts, review account activity and manage
+            access to the Retail Price Optimizer platform.
+          </p>
         </div>
-      </section>
 
-      {error && (
-        <section
-          role="alert"
-          className="flex flex-wrap items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800"
+        <button
+          type="button"
+          onClick={() => onNavigate("accounts")}
+          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
         >
-          <XCircle size={20} className="mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <p className="font-semibold">Could not refresh shop data</p>
-            <p className="mt-1 text-sm">{error}</p>
-          </div>
-          <button
-            onClick={() => load()}
-            className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold"
-          >
-            Try again
-          </button>
-        </section>
+          <Plus size={18} />
+          Create retailer
+        </button>
+      </header>
+
+      {/* Feedback */}
+      {message && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+        >
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+          <p>{message}</p>
+        </div>
       )}
 
-      {/* Business metrics */}
-      <section>
-        <SectionTitle
-          title="Business at a glance"
-          description="Summary based on your saved catalog and imported sales records."
-        />
+      {error && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <AlertCircle size={18} className="mt-0.5 shrink-0" />
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            title="My products"
-            value={number(products.length)}
-            subtitle="Products in your catalog"
-            icon={ShoppingBag}
-            accent="blue"
-            onClick={() => onNavigate("accounts")}
-          />
+          <div className="min-w-0 flex-1">
+            <p>{error}</p>
 
-          <MetricCard
-            title="Sales revenue"
-            value={money(stats.revenue)}
-            subtitle={
-              stats.salesRows
-                ? `${number(stats.salesRows)} imported sales rows`
-                : "Import sales to calculate revenue"
-            }
-            icon={Wallet}
-            accent="green"
-            onClick={() => onNavigate("analytics")}
-          />
-
-          <MetricCard
-            title="Units sold"
-            value={number(stats.units)}
-            subtitle={
-              stats.salesRows
-                ? "Units recorded in sales history"
-                : "No sales history recorded"
-            }
-            icon={TrendingUp}
-            accent="violet"
-            onClick={() => onNavigate("analytics")}
-          />
-
-          <MetricCard
-            title="Awaiting review"
-            value={number(stats.pending.length)}
-            subtitle="Price recommendations pending"
-            icon={Clock3}
-            accent="amber"
-            onClick={() => onNavigate("optimization")}
-          />
+            <button
+              type="button"
+              onClick={() => loadRetailers(true)}
+              className="mt-2 font-semibold underline underline-offset-2"
+            >
+              Try again
+            </button>
+          </div>
         </div>
-      </section>
+      )}
 
-      {/* Inventory alerts */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <SectionTitle
-          title="Inventory health"
-          description="Use these indicators to decide which stock needs attention."
+      {/* Overview cards */}
+      <section>
+        <SectionHeading
+          title="Platform overview"
+          description="Account and product totals from your retailer directory."
           action={
             <button
-              onClick={() => onNavigate("inventory")}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700"
+              type="button"
+              onClick={() => loadRetailers(true)}
+              disabled={refreshing}
+              className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
             >
-              View inventory <ArrowRight size={15} />
+              <RefreshCw
+                size={14}
+                className={refreshing ? "animate-spin" : ""}
+              />
+              Refresh
             </button>
           }
         />
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Units in stock</p>
-            <p className="mt-2 text-2xl font-bold">{number(stats.inventoryUnits)}</p>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Stock cost value</p>
-            <p className="mt-2 text-2xl font-bold">
-              {money(stats.inventoryCostValue)}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Stock retail value</p>
-            <p className="mt-2 text-2xl font-bold">
-              {money(stats.inventoryRetailValue)}
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
-            <p className="text-sm text-amber-800">Low / zero stock</p>
-            <p className="mt-2 text-2xl font-bold text-amber-950">
-              {number(stats.lowStock.length + stats.outOfStock.length)}
-            </p>
-            <p className="mt-1 text-xs text-amber-800">
-              {number(stats.lowStock.length)} low · {number(stats.outOfStock.length)} out
-            </p>
-          </div>
-        </div>
-
-        {(stats.lowStock.length > 0 || stats.outOfStock.length > 0) && (
-          <div className="mt-5 space-y-2">
-            {stats.outOfStock.slice(0, 3).map((product) => (
-              <div
-                key={product.id || getSku(product)}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-red-100 bg-red-50/70 p-3"
-              >
-                <XCircle size={18} className="text-red-600" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {getName(product)}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    SKU: {getSku(product)}
-                  </p>
-                </div>
-                <span className="text-xs font-bold text-red-700">
-                  Out of stock
-                </span>
-              </div>
-            ))}
-
-            {stats.lowStock.slice(0, 3).map((product) => (
-              <div
-                key={product.id || getSku(product)}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/70 p-3"
-              >
-                <AlertTriangle size={18} className="text-amber-600" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {getName(product)}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    SKU: {getSku(product)}
-                  </p>
-                </div>
-                <span className="text-xs font-bold text-amber-800">
-                  {number(getStock(product))} left
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {products.length > 0 &&
-          stats.lowStock.length === 0 &&
-          stats.outOfStock.length === 0 && (
-            <div className="mt-5 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
-              <CheckCircle2 size={18} />
-              No products are currently below the dashboard's low-stock threshold of 5 units.
-            </div>
-          )}
-      </section>
-
-      {/* Quick actions */}
-      <section>
-        <SectionTitle
-          title="Quick actions"
-          description="Jump straight to the task you need."
-        />
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <ActionCard
-            icon={Package}
-            title="Products & imports"
-            description="Add products or upload product and sales CSV files."
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Total retailers"
+            value={stats.total}
+            description="Registered retailer accounts"
+            icon={Users}
             color="blue"
-            onClick={() => onNavigate("accounts")}
+            loading={loading}
           />
 
-          <ActionCard
-            icon={Tag}
-            title="Price optimization"
-            description="Generate proposed selling prices and review decisions."
+          <StatCard
+            title="Active accounts"
+            value={stats.active}
+            description="Accounts currently enabled"
+            icon={UserCheck}
             color="green"
-            onClick={() => onNavigate("optimization")}
+            loading={loading}
           />
 
-          <ActionCard
-            icon={FlaskConical}
-            title="What-If analysis"
-            description="Explore possible outcomes for alternative prices."
-            color="violet"
-            onClick={() => onNavigate("whatif")}
-          />
-
-          <ActionCard
-            icon={BarChart3}
-            title="Sales analytics"
-            description="Review the sales metrics available from your records."
+          <StatCard
+            title="Disabled accounts"
+            value={stats.inactive}
+            description="Accounts currently inactive"
+            icon={UserX}
             color="amber"
-            onClick={() => onNavigate("analytics")}
+            loading={loading}
+          />
+
+          <StatCard
+            title="Products listed"
+            value={stats.products}
+            description="Products across retailer accounts"
+            icon={Package}
+            color="purple"
+            loading={loading}
           />
         </div>
       </section>
 
-      {/* Onboarding */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <SectionTitle
-          title="Your setup checklist"
-          description="Complete these steps to get more value from the workspace."
-        />
+      {/* Account health */}
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <SectionHeading
+            title="Account health"
+            description="Current status of retailer access."
+          />
 
-        <div className="mt-5 space-y-3">
-          {checklist.map((item, index) => (
-            <div
-              key={item.title}
-              className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-4"
-            >
-              <span
-                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                  item.complete
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {item.complete ? (
-                  <CheckCircle2 size={20} />
-                ) : (
-                  <span className="font-bold">{index + 1}</span>
-                )}
-              </span>
+          {loading ? (
+            <LoadingLine />
+          ) : (
+            <>
+              <div className="mt-5 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-3xl font-bold tracking-tight text-slate-900">
+                    {stats.total > 0
+                      ? Math.round((stats.active / stats.total) * 100)
+                      : 0}
+                    %
+                  </p>
 
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-900">{item.title}</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {item.description}
+                  <p className="mt-1 text-sm text-slate-500">
+                    Active account rate
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-emerald-700">
+                    {stats.active} active
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    of {stats.total} retailers
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{
+                    width: `${
+                      stats.total
+                        ? (stats.active / stats.total) * 100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  Active: {stats.active}
+                </span>
+
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                  Disabled: {stats.inactive}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 xl:col-span-2">
+          <SectionHeading
+            title="Admin quick actions"
+            description="Common tasks for platform administration."
+          />
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <QuickAction
+              icon={Users}
+              title="Manage retailer accounts"
+              description="Create accounts and control access."
+              onClick={() => onNavigate("accounts")}
+            />
+
+            <QuickAction
+              icon={Package}
+              title="Review product workspace"
+              description="Open account management and product tools."
+              onClick={() => onNavigate("accounts")}
+            />
+          </div>
+
+          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
+            <div className="flex items-start gap-3">
+              <Activity
+                size={19}
+                className="mt-0.5 shrink-0 text-blue-700"
+              />
+
+              <div>
+                <p className="text-sm font-semibold text-blue-950">
+                  Platform access control
+                </p>
+
+                <p className="mt-1 text-xs leading-5 text-blue-800">
+                  Deactivating a retailer disables access and invalidates
+                  their existing sessions. It does not delete their account
+                  or product records.
                 </p>
               </div>
-
-              <button
-                onClick={item.action}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:text-blue-700"
-              >
-                {item.complete ? "Open" : item.button}
-              </button>
             </div>
-          ))}
+          </div>
         </div>
       </section>
 
-      {/* Recommendation center */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <SectionTitle
-          title="Price decision center"
-          description="Review recent recommendations before applying any price change."
-          action={
-            <button
-              onClick={() => onNavigate("optimization")}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700"
+      {/* Retailer directory */}
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 p-5 sm:p-6">
+          <SectionHeading
+            title="Retailer directory"
+            description="Search retailer accounts, check product counts and manage access."
+            action={
+              <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
+                <Store size={13} />
+                {filteredRetailers.length} shown
+              </span>
+            }
+          />
+
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                size={17}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by retailer name or username..."
+                className="block min-h-11 w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+              />
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 sm:w-48"
             >
-              Open optimizer <ArrowRight size={15} />
-            </button>
-          }
-        />
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-amber-50 p-4">
-            <Clock3 className="text-amber-700" size={20} />
-            <p className="mt-3 text-sm text-amber-800">Pending</p>
-            <p className="mt-1 text-2xl font-bold text-amber-950">
-              {number(stats.pending.length)}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-emerald-50 p-4">
-            <CheckCircle2 className="text-emerald-700" size={20} />
-            <p className="mt-3 text-sm text-emerald-800">Approved</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-950">
-              {number(stats.approved.length)}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-slate-100 p-4">
-            <XCircle className="text-slate-600" size={20} />
-            <p className="mt-3 text-sm text-slate-600">Rejected</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">
-              {number(stats.rejected.length)}
-            </p>
+              <option value="all">All accounts</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Disabled only</option>
+            </select>
           </div>
         </div>
 
-        {recommendations.length === 0 ? (
-          <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center">
-            <Tag className="mx-auto text-slate-400" size={28} />
-            <p className="mt-3 font-semibold text-slate-800">
-              No price recommendations yet
+        {loading ? (
+          <div className="space-y-4 p-6">
+            <LoadingLine />
+            <LoadingLine />
+            <LoadingLine />
+          </div>
+        ) : filteredRetailers.length === 0 ? (
+          <div className="flex flex-col items-center px-5 py-12 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <Users size={23} />
+            </div>
+
+            <h3 className="mt-4 font-semibold text-slate-900">
+              {retailers.length === 0
+                ? "No retailer accounts yet"
+                : "No matching retailers"}
+            </h3>
+
+            <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+              {retailers.length === 0
+                ? "Create a retailer account to get started."
+                : "Try another search term or change the status filter."}
             </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Add products first, then open Price Optimization to generate a proposal.
-            </p>
-            <button
-              onClick={() =>
-                onNavigate(products.length ? "optimization" : "accounts")
-              }
-              className="mt-4 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
-            >
-              {products.length ? "Start optimization" : "Add products"}
-            </button>
+
+            {retailers.length === 0 && (
+              <button
+                type="button"
+                onClick={() => onNavigate("accounts")}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                <Plus size={16} />
+                Create retailer
+              </button>
+            )}
           </div>
         ) : (
-          <div className="mt-4 divide-y divide-slate-100">
-            {recommendations.slice(0, 6).map((item, index) => {
-              const current = Number(
-                item.current_price ?? item.currentPrice ?? 0
-              );
-              const proposed = Number(
-                item.recommended_price ?? item.recommendedPrice ?? 0
-              );
-              const delta = current ? ((proposed - current) / current) * 100 : 0;
-              const status = String(item.status || "unknown").toLowerCase();
-
-              return (
-                <div
-                  key={item.id ?? index}
-                  className="flex flex-wrap items-center gap-3 py-4"
-                >
-                  <span
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                      delta > 0
-                        ? "bg-emerald-50 text-emerald-700"
-                        : delta < 0
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {delta > 0 ? (
-                      <ArrowUpRight size={20} />
-                    ) : delta < 0 ? (
-                      <ArrowDownRight size={20} />
-                    ) : (
-                      <Activity size={20} />
-                    )}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-slate-900">
-                      {item.product_name || item.productName || "Product recommendation"}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {money(current)} → {money(proposed)}
-                      {current > 0 && (
-                        <span
-                          className={`ml-2 font-semibold ${
-                            delta > 0 ? "text-emerald-700" : delta < 0 ? "text-amber-700" : "text-slate-500"
-                          }`}
-                        >
-                          {delta > 0 ? "+" : ""}
-                          {delta.toFixed(1)}%
-                        </span>
-                      )}
-                    </p>
-                  </div>
-
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      status === "approved"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : status === "rejected"
-                        ? "bg-red-50 text-red-700"
-                        : status === "pending"
-                        ? "bg-amber-50 text-amber-800"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {status}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <p className="mt-4 text-xs leading-5 text-slate-500">
-          Recommendations are estimates, not guaranteed outcomes. Confirm
-          cost, stock and applicable margin limits before approving a price.
-        </p>
-      </section>
-
-      {/* Product finder */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-        <SectionTitle
-          title="Product finder"
-          description="Quickly search your catalog and identify stock that may need attention."
-          action={
-            <button
-              onClick={() => onNavigate("accounts")}
-              className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700"
-            >
-              Manage catalog <ArrowRight size={15} />
-            </button>
-          }
-        />
-
-        <div className="relative mt-4">
-          <Search
-            size={18}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by product name, SKU or category…"
-            className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-
-        {filteredProducts.length === 0 ? (
-          <div className="py-8 text-center">
-            <Package className="mx-auto text-slate-400" size={28} />
-            <p className="mt-2 font-semibold text-slate-800">
-              {products.length ? "No matching products" : "Your catalog is empty"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {products.length
-                ? "Try another search term."
-                : "Add products or import your catalog to get started."}
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="py-3 pr-4">Product</th>
-                  <th className="py-3 pr-4">Category</th>
-                  <th className="py-3 pr-4">Price</th>
-                  <th className="py-3 pr-4">Stock</th>
-                  <th className="py-3">Status</th>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-5 py-3.5 font-semibold">Retailer</th>
+                  <th className="px-5 py-3.5 font-semibold">Username</th>
+                  <th className="px-5 py-3.5 text-right font-semibold">
+                    Products
+                  </th>
+                  <th className="px-5 py-3.5 font-semibold">Created</th>
+                  <th className="px-5 py-3.5 font-semibold">Status</th>
+                  <th className="px-5 py-3.5 text-right font-semibold">
+                    Action
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {filteredProducts.slice(0, 8).map((product, index) => {
-                  const stock = getStock(product);
-                  const status =
-                    stock <= 0
-                      ? "Out of stock"
-                      : stock <= 5
-                      ? "Low stock"
-                      : "In stock";
+
+              <tbody className="divide-y divide-slate-100">
+                {filteredRetailers.map((retailer) => {
+                  const active = isActive(retailer);
+                  const updating = updatingId === retailer.id;
 
                   return (
                     <tr
-                      key={product.id || getSku(product) || index}
-                      className="border-b border-slate-100 last:border-0"
+                      key={retailer.id}
+                      className="transition hover:bg-slate-50/80"
                     >
-                      <td className="py-3 pr-4">
-                        <p className="font-semibold text-slate-900">
-                          {getName(product)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {getSku(product)}
-                        </p>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-sm font-bold text-blue-700">
+                            {String(
+                              retailer.display_name ||
+                                retailer.username ||
+                                "R"
+                            )
+                              .charAt(0)
+                              .toUpperCase()}
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">
+                              {retailer.display_name || "Unnamed retailer"}
+                            </p>
+
+                            <p className="mt-1 text-xs text-slate-400">
+                              Account #{retailer.id}
+                            </p>
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-3 pr-4 text-slate-600">
-                        {product.category || "—"}
+
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                        {retailer.username}
                       </td>
-                      <td className="py-3 pr-4 font-semibold">
-                        {money(getPrice(product))}
+
+                      <td className="px-5 py-4 text-right font-semibold text-slate-800">
+                        {Number(retailer.product_count || 0).toLocaleString(
+                          "en-IN"
+                        )}
                       </td>
-                      <td className="py-3 pr-4">{number(stock)}</td>
-                      <td className="py-3">
-                        <span
-                          className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${
-                            stock <= 0
-                              ? "bg-red-50 text-red-700"
-                              : stock <= 5
-                              ? "bg-amber-50 text-amber-800"
-                              : "bg-emerald-50 text-emerald-700"
+
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-500">
+                        {formatDate(retailer.created_at)}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <StatusBadge active={active} />
+                      </td>
+
+                      <td className="px-5 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => toggleRetailer(retailer)}
+                          disabled={updating}
+                          className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                            active
+                              ? "border-red-200 bg-white text-red-700 hover:bg-red-50"
+                              : "border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
                           }`}
                         >
-                          {status}
-                        </span>
+                          {updating ? (
+                            <RefreshCw size={13} className="animate-spin" />
+                          ) : active ? (
+                            <XCircle size={14} />
+                          ) : (
+                            <CheckCircle2 size={14} />
+                          )}
+
+                          {updating
+                            ? "Updating"
+                            : active
+                              ? "Deactivate"
+                              : "Activate"}
+                        </button>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-
-            {filteredProducts.length > 8 && (
-              <p className="mt-3 text-xs text-slate-500">
-                Showing 8 of {filteredProducts.length} matching products.
-              </p>
-            )}
           </div>
         )}
+
+        <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p className="text-xs leading-5 text-slate-500">
+            Account counts reflect the directory returned by the backend.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => onNavigate("accounts")}
+            className="inline-flex items-center gap-2 self-start text-sm font-semibold text-blue-700 hover:text-blue-800"
+          >
+            Open account management
+            <ArrowRight size={16} />
+          </button>
+        </div>
       </section>
 
-      {/* Data transparency */}
-      <section className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
-        <div className="flex items-start gap-3">
-          <Database size={21} className="mt-0.5 shrink-0 text-blue-700" />
+      <p className="text-xs leading-5 text-slate-400">
+        Platform summary is based on registered retailer accounts and their
+        saved product counts. Retailer sales and profit are not aggregated
+        into this dashboard.
+      </p>
+    </div>
+  );
+}
+
+function RetailerOverview({ user, onNavigate }) {
+  const shortcuts = [
+    {
+      id: "optimization",
+      title: "Price Optimization",
+      description: "Evaluate pricing scenarios for your products.",
+      icon: Activity,
+      color: "blue",
+    },
+    {
+      id: "whatif",
+      title: "What-If Analysis",
+      description: "Compare a proposed price with your current price.",
+      icon: LayoutDashboard,
+      color: "purple",
+    },
+    {
+      id: "inventory",
+      title: "Inventory",
+      description: "Review stock levels and product availability.",
+      icon: Package,
+      color: "amber",
+    },
+    {
+      id: "analytics",
+      title: "Retail Analytics",
+      description: "Understand sales and revenue from your own data.",
+      icon: Activity,
+      color: "green",
+    },
+    {
+      id: "accounts",
+      title: "Products & Approvals",
+      description: "Manage products, imports and recommendations.",
+      icon: Store,
+      color: "blue",
+    },
+  ];
+
+  return (
+    <div className="min-w-0 space-y-6">
+      <header>
+        <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
+          Retailer workspace
+        </p>
+
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          Welcome, {user?.displayName || user?.username || "Retailer"}
+        </h1>
+
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Manage your products, explore pricing scenarios and understand your
+          shop's performance.
+        </p>
+      </header>
+
+      <section className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5 sm:p-6">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+            <Store size={24} />
+          </div>
+
           <div>
-            <h2 className="font-bold text-slate-900">About your numbers</h2>
+            <h2 className="font-semibold text-slate-900">
+              Your shop workspace
+            </h2>
+
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              Sales revenue and units sold come from the sales summary API.
-              Stock values are calculated from your saved inventory and product
-              prices. Inventory retail value is not profit, and the difference
-              between selling price and cost does not include operating expenses,
-              taxes or other costs.
+              Start by maintaining your product catalog and importing your
+              own sales history. Analytics and optimization depend on the
+              available records for your account.
             </p>
-            {!stats.salesRows && (
-              <p className="mt-2 text-sm font-medium text-blue-800">
-                Your sales summary is empty. Import your own sales history to
-                populate sales-based metrics.
-              </p>
-            )}
+
+            <button
+              type="button"
+              onClick={() => onNavigate("accounts")}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Open products & approvals
+              <ArrowRight size={16} />
+            </button>
           </div>
         </div>
       </section>
+
+      <section>
+        <SectionHeading
+          title="Your workspace tools"
+          description="Choose what you want to work on."
+        />
+
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {shortcuts.map((item) => {
+            const Icon = item.icon;
+
+            const colors = {
+              blue: "bg-blue-50 text-blue-700",
+              purple: "bg-purple-50 text-purple-700",
+              amber: "bg-amber-50 text-amber-700",
+              green: "bg-emerald-50 text-emerald-700",
+            };
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onNavigate(item.id)}
+                className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${colors[item.color]}`}
+                  >
+                    <Icon size={21} />
+                  </div>
+
+                  <ExternalLink
+                    size={16}
+                    className="text-slate-300 transition group-hover:text-blue-600"
+                  />
+                </div>
+
+                <h3 className="mt-4 font-semibold text-slate-900">
+                  {item.title}
+                </h3>
+
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  {item.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
     </div>
+  );
+}
+
+function SectionHeading({ title, description, action }) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <h2 className="text-base font-bold text-slate-900">{title}</h2>
+
+        {description && (
+          <p className="mt-1 text-sm leading-5 text-slate-500">
+            {description}
+          </p>
+        )}
+      </div>
+
+      {action}
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  color,
+  loading,
+}) {
+  const colors = {
+    blue: "bg-blue-50 text-blue-700",
+    green: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-700",
+    purple: "bg-purple-50 text-purple-700",
+  };
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-500">{title}</p>
+
+          {loading ? (
+            <div className="mt-3 h-8 w-20 animate-pulse rounded-lg bg-slate-100" />
+          ) : (
+            <p className="mt-3 break-words text-3xl font-bold tracking-tight text-slate-900">
+              {Number(value).toLocaleString("en-IN")}
+            </p>
+          )}
+
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${colors[color]}`}
+        >
+          <Icon size={21} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function StatusBadge({ active }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold ${
+        active
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          active ? "bg-emerald-500" : "bg-slate-400"
+        }`}
+      />
+
+      {active ? "Active" : "Disabled"}
+    </span>
+  );
+}
+
+function QuickAction({ icon: Icon, title, description, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50/50"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition group-hover:bg-blue-100 group-hover:text-blue-700">
+        <Icon size={19} />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-slate-900">{title}</p>
+
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          {description}
+        </p>
+      </div>
+
+      <ArrowRight
+        size={16}
+        className="shrink-0 text-slate-300 transition group-hover:text-blue-600"
+      />
+    </button>
+  );
+}
+
+function LoadingLine() {
+  return (
+    <div className="h-4 w-full animate-pulse rounded-md bg-slate-100" />
   );
 }
